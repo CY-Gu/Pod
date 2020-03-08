@@ -9,17 +9,17 @@ tags: kubernetes, k8s, Pod, Static Pod
 本篇介紹一些Pod的進階概念，首先要了解Pod的創建過程為何。
 
 :::info
-當一個Pod被創立時，是由Master 先建立 pod.yaml file，透過kube-apiserver命令Slave node中的kubelet，由kubelet創建pod。
+當一個Pod被創立時，是由Master 先建立 pod-def.yaml file，透過kube-apiserver命令Slave node中的kubelet，由kubelet創建pod。
 :::
 
 但是Pod創建方式其實不只上述一種，舉例來說，假設這個cluster只有一個Slave node，既沒有Master，也沒有第二個Slave node，是個單一節點的叢集。那麼，這個叢集即無法透過kube-apiserver通知kubelet創建Pod(因為沒有Master)。所以有另一種創建Pod的方式
 
 :::info
-將pod.yaml file放在特定位置下，由kubelet直接根據這個位置的yaml file來創建Pod，用這種方式創建的Pod，稱為static pod
+將pod-def.yaml file放在特定位置下，由kubelet直接根據這個位置的yaml file來創建Pod，用這種方式創建的Pod，稱為static pod
 :::
 
 kubelet會有兩種input
-*    透過特定路徑下的 pod.yaml file，創建static pods
+*    透過特定路徑下的 pod-def.yaml file，創建static pods
 *    Master利用kube-apiserver並通過HTTP API ebdpoint的方式
 
 所以，Pod依創建方式可分為兩種

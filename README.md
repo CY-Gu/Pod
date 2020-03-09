@@ -9,17 +9,17 @@ tags: kubernetes, k8s, Pod, Static Pod
 本篇介紹一些Pod的進階概念，首先要了解Pod的創建過程為何。
 
 :::info
-當一個Pod被創立時，是由Master 先建立 pod.yaml file，透過kube-apiserver命令Slave node中的kubelet，由kubelet創建pod。
+當一個Pod被創立時，是由Master 先建立 pod-def.yaml file，透過kube-apiserver命令Slave node中的kubelet，由kubelet創建pod。
 :::
 
 但是Pod創建方式其實不只上述一種，舉例來說，假設這個cluster只有一個Slave node，既沒有Master，也沒有第二個Slave node，是個單一節點的叢集。那麼，這個叢集即無法透過kube-apiserver通知kubelet創建Pod(因為沒有Master)。所以有另一種創建Pod的方式
 
 :::info
-將pod.yaml file放在特定位置下，由kubelet直接根據這個位置的yaml file來創建Pod，用這種方式創建的Pod，稱為static pod
+將pod-def.yaml file放在特定位置下，由kubelet直接根據這個位置的yaml file來創建Pod，用這種方式創建的Pod，稱為static pod
 :::
 
 kubelet會有兩種input
-*    透過特定路徑下的 pod.yaml file，創建static pods
+*    透過特定路徑下的 pod-def.yaml file，創建static pods
 *    Master利用kube-apiserver並通過HTTP API ebdpoint的方式
 
 所以，Pod依創建方式可分為兩種
@@ -97,7 +97,126 @@ staticPodPath: /etc/kubernetes/manifests
 
 這邊有個觀念很重要
 :::warning
-直接用**kubectl delete po <static-pod-name>** 指令刪除static pod 是無法成功的，因為 kubelet 會定期檢查特定目錄下的檔案，即使static pod被刪除，但只要其 yaml file 還存在，kubelet就會重新創建一個新的static pod。若要刪除static pod，需刪除其目錄下的 yaml file
+直接用**kubectl delete po \<static-pod-name\>** 指令刪除static pod 是無法成功的，因為 kubelet 會定期檢查特定目錄下的檔案，即使static pod被刪除，但只要其 yaml file 還存在，kubelet就會重新創建一個新的static pod。若要刪除static pod，需刪除其目錄下的 yaml file
 :::
 
-```舉個例子，現在我們要刪除my-app這個pod
+## 範例
+
+舉個例子，現在我們要刪除static-greenbox-node01這個pod
+
+```=
+master $ kubectl get po
+NAME                     READY   STATUS    RESTARTS   AGE
+static-greenbox-node01   1/1     Running   0          104s
+```
+我們到 **/etc/kubernetes/manifests** 目錄下找這個file
+```=
+master $ pwd
+/etc/kubernetes/manifests
+master $ ls
+etcd.yaml  kube-apiserver.yaml  kube-controller-manager.yaml  kube-scheduler.yaml
+```
+發現找不到這個file，那這個static pod是如何創建的呢? 我們 **get pod -o wide** 看看
+```=
+master $ kubectl get po -o wide
+NAME                     READY   STATUS    RESTARTS   AGE     IP          NODE     NOMINATED NODE   READINESS GATES
+static-greenbox-node01   1/1     Running   0          6m50s   10.44.0.1   node01   <none>           <none>
+```
+發現他在node01這個節點上，這時我們ssh進入node01 ( **ssh \<node-ip-address\>** )
+進來後一樣使用 **ps -aux | grep kubelet** 查找，然後查看 **/var/lib/kubelet/config.yaml** 檔案
+
+
+```=
+node01 $ cat /var/lib/kubelet/config.yaml
+address: 0.0.0.0
+apiVersion: kubelet.config.k8s.io/v1beta1
+authentication:
+  anonymous:
+    enabled: false
+  webhook:
+    cacheTTL: 2m0s
+    enabled: true
+  x509:
+    clientCAFile: /etc/kubernetes/pki/ca.crt
+authorization:
+  mode: Webhook
+  webhook:
+    cacheAuthorizedTTL: 5m0s
+    cacheUnauthorizedTTL: 30s
+cgroupDriver: cgroupfs
+cgroupsPerQOS: true
+clusterDNS:
+- 10.96.0.10
+clusterDomain: cluster.local
+configMapAndSecretChangeDetectionStrategy: Watch
+containerLogMaxFiles: 5
+containerLogMaxSize: 10Mi
+contentType: application/vnd.kubernetes.protobuf
+cpuCFSQuota: true
+cpuCFSQuotaPeriod: 100ms
+cpuManagerPolicy: none
+cpuManagerReconcilePeriod: 10s
+enableControllerAttachDetach: true
+enableDebuggingHandlers: true
+enforceNodeAllocatable:
+- pods
+eventBurst: 10
+eventRecordQPS: 5
+evictionHard:
+  imagefs.available: 15%
+  memory.available: 100Mi
+  nodefs.available: 10%
+  nodefs.inodesFree: 5%
+evictionPressureTransitionPeriod: 5m0s
+failSwapOn: true
+fileCheckFrequency: 20s
+hairpinMode: promiscuous-bridge
+healthzBindAddress: 127.0.0.1
+healthzPort: 10248
+httpCheckFrequency: 20s
+imageGCHighThresholdPercent: 85
+imageGCLowThresholdPercent: 80
+imageMinimumGCAge: 2m0s
+iptablesDropBit: 15
+iptablesMasqueradeBit: 14
+kind: KubeletConfiguration
+kubeAPIBurst: 10
+kubeAPIQPS: 5
+makeIPTablesUtilChains: true
+maxOpenFiles: 1000000
+maxPods: 110
+nodeLeaseDurationSeconds: 40
+nodeStatusReportFrequency: 1m0s
+nodeStatusUpdateFrequency: 10s
+oomScoreAdj: -999
+podPidsLimit: -1
+port: 10250
+registryBurst: 10
+registryPullQPS: 5
+resolvConf: /etc/resolv.conf
+rotateCertificates: true
+runtimeRequestTimeout: 2m0s
+serializeImagePulls: true
+staticPodPath: /etc/just-to-mess-with-you
+streamingConnectionIdleTimeout: 4h0m0s
+syncFrequency: 1m0s
+topologyManagerPolicy: none
+volumeStatsAggPeriod: 1m0s
+```
+
+赫然發現 static pod的創見目錄變更了 位於 **staticPodPath: /etc/just-to-mess-with-you** ，索性進入該目錄
+```=
+node01 $ pwd
+/etc/just-to-mess-with-you
+node01 $ ls
+greenbox.yaml
+```
+真的發現這個 static pod file 了，將其刪除就大功告成啦~
+
+---
+
+### Thank you! :sheep: 
+
+You can find me on
+
+- george4908090@gmail.com

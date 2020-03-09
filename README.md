@@ -215,6 +215,44 @@ greenbox.yaml
 
 ---
 
+## 創建 static pod
+
+在knode上創建static pod，先找到創建的特定目錄，在該目錄下創建static-pod.yaml，使用最簡單的nginx image做範例，內容如下：
+```=
+apiVersion: v1
+kind: Pod
+metadata:
+  name: static-web
+  labels:
+    role: myrole
+spec:
+  containers:
+    - name: web
+      image: nginx
+      ports:
+        - name: web
+          containerPort: 80
+          protocol: TCP
+```
+但是，若直接將此 static pod 創建起來，會一直進入CrashBackOff狀態，需要重新config你的kubelet才可以。
+輸入 **KUBELET_ARGS="--cluster-dns=10.254.0.10 --cluster-domain=kube.local --pod-manifest-path=\<static-pod-dic\>"**
+
+```=
+KUBELET_ARGS="--cluster-dns=10.254.0.10 --cluster-domain=kube.local --pod-manifest-path=/etc/kubernetes/manifest"
+```
+接著重啟kubelet
+```=
+systemctl restart kubelet
+```
+到Master查看，就發現 Pod 處於 Running status囉～
+```=
+$ kubectl get po
+NAME               READY   STATUS    RESTARTS   AGE
+static-web-knode   1/1     Running   0          3h31m
+```
+
+---
+
 ### Thank you! :sheep: 
 
 You can find me on

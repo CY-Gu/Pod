@@ -10,6 +10,8 @@ tags: kubernetes, k8s, Pod, Static Pod
 
 :::info
 當一個Pod被創立時，是由Master 先建立 pod-def.yaml file，透過kube-apiserver命令Slave node中的kubelet，由kubelet創建pod。
+
+p.s. pod及container名稱不能用大寫
 :::
 
 但是Pod創建方式其實不只上述一種，舉例來說，假設這個cluster只有一個Slave node，既沒有Master，也沒有第二個Slave node，是個單一節點的叢集。那麼，這個叢集即無法透過kube-apiserver通知kubelet創建Pod(因為沒有Master)。所以有另一種創建Pod的方式
@@ -39,7 +41,9 @@ kubelet會有兩種input
 
 ## 如何知道哪個路徑用來創建static pod
 
-配置文件就是放在特定目錄下的標準的 yaml 格式的 Pod 定義文件。用 **kubelet --pod-manifest-path =** 來啟動kubelet，kubelet 定期的去掃描這個目錄，根據這個目錄下出現或消失的 yaml 文件來創建或刪除static pod，那麼，要如何知道這個目錄在哪裡呢，可以通過以下指令 **ps -aux | grep kubelet**
+配置文件就是放在特定目錄下的標準的 yaml 格式的 Pod 定義文件。用 **kubelet --pod-manifest-path =** 來啟動kubelet，kubelet 定期的去掃描這個目錄，根據這個目錄下出現或消失的 yaml 文件來創建或刪除static pod，那麼，要如何知道這個目錄在哪裡呢，可以通過以下指令 **ps -aux | grep kubelet** 
+
+(也可先進入/etc/systemd/system/kubelet.service.d目錄下查看10-kubeadm.conf這個檔案)
 ```=
 $ ps -aux | grep kubelet
 root        665  3.9  1.5 1705920 64016 ?       Ssl  00:50  50:30 /usr/bin/kubelet --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf --config=/var/lib/kubelet/config.yaml --cgroup-driver=cgroupfs --pod-infra-container-image=k8s.gcr.io/pause:3.1 --resolv-conf=/run/systemd/resolve/resolv.conf
@@ -250,6 +254,45 @@ $ kubectl get po
 NAME               READY   STATUS    RESTARTS   AGE
 static-web-knode   1/1     Running   0          3h31m
 ```
+---
+
+## Pod 操作
+創建Pod
+```=
+kubectl run <pod-name> --image=<image> --generator=run-pod/v1 --restart=Never --dry-run -o yaml > pod-def.yaml
+```
+:::success
+```--generator=```其實也可以用來創建其他object，但是[官方文獻](https://kubernetes.io/docs/reference/kubectl/conventions/)不推薦用來創建Pod以外的物件；
+
+```restart=Never```用來識別Pod，若```restart=Always```則是deployment；
+
+```--dry-run```表示一些default的參數先拿掉，暫時不需要submit出去 (通常在輸出yaml時使用)
+:::
+
+查看Pod label
+```=
+kubectl get pod --show-labels
+```
+新增Pod label
+```=
+kubectl label po <pod-name> <key>=<value>
+```
+
+刪除Pod label
+```=
+kubectl label po <pod-name> <key>-
+```
+對Pod下內部指令
+```=
+kubectl exec <pod-name> -- <command>
+```
+將Pod expose出去 **(創建一個service)**
+
+```=
+kubectl expose po <pod-name> --type=NodePort --name=<svc-name> --port=80
+```
+
+
 
 ---
 

@@ -9,9 +9,9 @@ tags: kubernetes, k8s, Pod, Static Pod
 本篇介紹一些Pod的進階概念，首先要了解Pod的創建過程為何。
 
 :::info
-當一個Pod被創立時，是由Master 先建立 pod-def.yaml file，透過kube-apiserver命令Slave node中的kubelet，由kubelet創建pod。
+當一個Pod被創立時，是由Master 先建立 pod-def.yaml file(或透過command)，透過kube-apiserver命令Slave node中的kubelet創建pod。
 
-p.s. pod及container名稱不能用大寫
+**P.S. pod及container名稱不能用大寫**
 :::
 
 但是Pod創建方式其實不只上述一種，舉例來說，假設這個cluster只有一個Slave node，既沒有Master，也沒有第二個Slave node，是個單一節點的叢集。那麼，這個叢集即無法透過kube-apiserver通知kubelet創建Pod(因為沒有Master)。所以有另一種創建Pod的方式
@@ -255,6 +255,106 @@ NAME               READY   STATUS    RESTARTS   AGE
 static-web-knode   1/1     Running   0          3h31m
 ```
 ---
+## 如何看Pod網域
+當查看Pod時，可以看到它們的IP addr
+```=
+root@gmaster:/home/gmaster/k8s_demo/1-basicObject# kubectl get no -o wide
+NAME      STATUS   ROLES    AGE   VERSION   INTERNAL-IP    EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION      CONTAINER-RUNTIME
+gmaster   Ready    master   9d    v1.17.4   10.10.14.124   <none>        Ubuntu 18.04 LTS     4.15.0-20-generic   docker://19.3.6
+gnode01   Ready    <none>   9d    v1.17.4   10.10.11.10    <none>        Ubuntu 18.04 LTS     4.15.0-20-generic   docker://19.3.6
+gnode02   Ready    <none>   9d    v1.17.4   10.10.19.6     <none>        Ubuntu 18.04.4 LTS   4.15.0-20-generic   docker://19.3.6
+```
+可以發現它們的IP都是10.10.X.X，為甚麼他們的IP都有相同的的mask呢?又要如何確定它們的mask是多少?
+首先，先觀察它們是用哪張interface。可以用```arp```來查看
+```=
+oot@gmaster:/home/gmaster/k8s_demo/1-basicObject# arp
+Address                  HWtype  HWaddress           Flags Mask            Iface
+gnode01                  ether   00:50:56:b5:58:1d   C                     ens160
+172.17.0.4               ether   02:42:ac:11:00:04   C                     docker0
+172.17.0.2               ether   02:42:ac:11:00:02   C                     docker0
+169.254.169.254                  (incomplete)                              ens160
+172.17.0.3               ether   02:42:ac:11:00:03   C                     docker0
+10.10.18.186             ether   ac:f1:df:79:28:1c   C                     ens160
+gnode02                  ether   00:50:56:b5:d6:93   C                     ens160
+dlink.svc                ether   00:18:e7:da:f7:0b   C                     ens160
+dns.h                    ether   00:11:32:2c:a6:03   C                     ens160
+10.10.10.8               ether   d0:bf:9c:bd:42:f4   C                     ens160
+10.10.10.9               ether   c8:d9:d2:cb:f2:3a   C                     ens160
+```
+可以發現gmaster是使用**ens160**這張interface，再用```ip addr```指令，並觀察**ens160**這張interface的資訊
+```=
+root@gmaster:/home/gmaster/k8s_demo/1-basicObject# ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: ens160: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    link/ether 00:50:56:b5:66:81 brd ff:ff:ff:ff:ff:ff
+    inet 10.10.14.124/16 brd 10.10.255.255 scope global dynamic noprefixroute ens160
+       valid_lft 567sec preferred_lft 567sec
+    inet6 2002:8c73:3b40:100:1fa:4813:8b09:4316/64 scope global temporary dynamic 
+       valid_lft 65533sec preferred_lft 20150sec
+    inet6 2002:8c73:3b40:100:c9e1:229f:d24b:7312/64 scope global temporary deprecated dynamic 
+       valid_lft 65533sec preferred_lft 0sec
+    inet6 2002:8c73:3b40:100:514d:7e04:c3ff:3602/64 scope global temporary deprecated dynamic 
+       valid_lft 65533sec preferred_lft 0sec
+    inet6 2002:8c73:3b40:100:5ca8:c52c:4145:664f/64 scope global temporary deprecated dynamic 
+       valid_lft 65533sec preferred_lft 0sec
+    inet6 2002:8c73:3b40:100:28cb:33e9:d27:a1f0/64 scope global temporary deprecated dynamic 
+       valid_lft 65533sec preferred_lft 0sec
+    inet6 2002:8c73:3b40:100:1468:1c8d:c76f:c936/64 scope global temporary deprecated dynamic 
+       valid_lft 65533sec preferred_lft 0sec
+    inet6 2002:8c73:3b40:100:2865:651d:5726:f3ad/64 scope global temporary deprecated dynamic 
+       valid_lft 21467sec preferred_lft 0sec
+    inet6 2002:8c73:3b40:100:a06a:9f79:4918:92ab/64 scope global dynamic mngtmpaddr noprefixroute 
+       valid_lft 65533sec preferred_lft 65533sec
+    inet6 fe80::739b:d560:7283:502e/64 scope link noprefixroute 
+       valid_lft forever preferred_lft forever
+3: docker0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default 
+    link/ether 02:42:31:3b:d7:f7 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:31ff:fe3b:d7f7/64 scope link 
+       valid_lft forever preferred_lft forever
+5: vethd3da50e@if4: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master docker0 state UP group default 
+    link/ether 9e:93:c6:8d:47:1c brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet6 fe80::9c93:c6ff:fe8d:471c/64 scope link 
+       valid_lft forever preferred_lft forever
+7: veth8440c63@if6: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master docker0 state UP group default 
+    link/ether ea:5a:ce:43:bf:d0 brd ff:ff:ff:ff:ff:ff link-netnsid 1
+    inet6 fe80::e85a:ceff:fe43:bfd0/64 scope link 
+       valid_lft forever preferred_lft forever
+38: datapath: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1376 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/ether 82:e7:d4:de:dc:4c brd ff:ff:ff:ff:ff:ff
+    inet6 fe80::80e7:d4ff:fede:dc4c/64 scope link 
+       valid_lft forever preferred_lft forever
+40: weave: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1376 qdisc noqueue state UP group default qlen 1000
+    link/ether 2e:66:9c:b0:1c:ca brd ff:ff:ff:ff:ff:ff
+    inet 10.44.0.0/12 brd 10.47.255.255 scope global weave
+       valid_lft forever preferred_lft forever
+    inet6 fe80::2c66:9cff:feb0:1cca/64 scope link 
+       valid_lft forever preferred_lft forever
+42: vethwe-datapath@vethwe-bridge: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1376 qdisc noqueue master datapath state UP group default 
+    link/ether 02:6a:73:be:b5:0a brd ff:ff:ff:ff:ff:ff
+    inet6 fe80::6a:73ff:febe:b50a/64 scope link 
+       valid_lft forever preferred_lft forever
+43: vethwe-bridge@vethwe-datapath: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1376 qdisc noqueue master weave state UP group default 
+    link/ether 22:06:2f:77:5b:cf brd ff:ff:ff:ff:ff:ff
+    inet6 fe80::2006:2fff:fe77:5bcf/64 scope link 
+       valid_lft forever preferred_lft forever
+44: vxlan-6784: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 65535 qdisc noqueue master datapath state UNKNOWN group default qlen 1000
+    link/ether ea:25:df:20:5c:f6 brd ff:ff:ff:ff:ff:ff
+    inet6 fe80::e825:dfff:fe20:5cf6/64 scope link 
+       valid_lft forever preferred_lft forever
+```
+**ens160**下顯示```inet 10.10.14.124/16```，就可以看出所有使用ens160 interface的Pod IP addr 都會是```10.10.x.x/16```這個prefix。
+
+
+
+---
+
 
 ## Pod 操作
 創建Pod
@@ -291,6 +391,7 @@ kubectl exec <pod-name> -- <command>
 ```=
 kubectl expose po <pod-name> --type=NodePort --name=<svc-name> --port=80
 ```
+
 
 
 

@@ -9,7 +9,9 @@ tags: kubernetes, k8s, Pod, Static Pod
 本篇介紹一些Pod的進階概念，首先要了解Pod的創建過程為何。
 
 :::info
-當一個Pod被創立時，是由Master 先建立 pod-def.yaml file(或透過command)，透過kube-apiserver命令Slave node中的kubelet創建pod。
+當一個Pod被創立時，是由Master 先建立 pod-def.yaml file(或透過command)，透過kube-apiserver命令Slave node中的kubelet，kubelet透過啟動一個名為```k8s.gcr.io/pause:3.1``` 的image來創建pod。
+![](https://i.imgur.com/1aWtZUt.png)
+
 
 **P.S. pod及container名稱不能用大寫**
 :::
@@ -44,7 +46,7 @@ kubelet會有兩種input
 配置文件就是放在特定目錄下的標準的 yaml 格式的 Pod 定義文件。用 **kubelet --pod-manifest-path =** 來啟動kubelet，kubelet 定期的去掃描這個目錄，根據這個目錄下出現或消失的 yaml 文件來創建或刪除static pod，那麼，要如何知道這個目錄在哪裡呢，可以通過以下指令 **ps -aux | grep kubelet** 
 
 (也可先進入/etc/systemd/system/kubelet.service.d目錄下查看10-kubeadm.conf這個檔案)
-```=
+```bash=
 $ ps -aux | grep kubelet
 root        665  3.9  1.5 1705920 64016 ?       Ssl  00:50  50:30 /usr/bin/kubelet --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf --config=/var/lib/kubelet/config.yaml --cgroup-driver=cgroupfs --pod-infra-container-image=k8s.gcr.io/pause:3.1 --resolv-conf=/run/systemd/resolve/resolv.conf
 root       3100  6.3  6.2 496088 248664 ?       Ssl  00:50  81:37 kube-apiserver --advertise-address=192.168.17.131 --allow-privileged=true --authorization-mode=Node,RBAC --client-ca-file=/etc/kubernetes/pki/ca.crt --enable-admission-plugins=NodeRestriction --enable-bootstrap-token-auth=true --etcd-cafile=/etc/kubernetes/pki/etcd/ca.crt --etcd-certfile=/etc/kubernetes/pki/apiserver-etcd-client.crt --etcd-keyfile=/etc/kubernetes/pki/apiserver-etcd-client.key --etcd-servers=https://127.0.0.1:2379 --insecure-port=0 --kubelet-client-certificate=/etc/kubernetes/pki/apiserver-kubelet-client.crt --kubelet-client-key=/etc/kubernetes/pki/apiserver-kubelet-client.key --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname --proxy-client-cert-file=/etc/kubernetes/pki/front-proxy-client.crt --proxy-client-key-file=/etc/kubernetes/pki/front-proxy-client.key --requestheader-allowed-names=front-proxy-client --requestheader-client-ca-file=/etc/kubernetes/pki/front-proxy-ca.crt --requestheader-extra-headers-prefix=X-Remote-Extra- --requestheader-group-headers=X-Remote-Group --requestheader-username-headers=X-Remote-User --secure-port=6443 --service-account-key-file=/etc/kubernetes/pki/sa.pub --service-cluster-ip-range=10.96.0.0/12 --tls-cert-file=/etc/kubernetes/pki/apiserver.crt --tls-private-key-file=/etc/kubernetes/pki/apiserver.key
@@ -53,7 +55,7 @@ george    15571  0.0  0.0  21532  1060 pts/0    S+   22:15   0:00 grep --color=a
 ```
 然後，找到 **--config=/var/lib/kubelet/config.yaml** 這個參數，並且檢查 config.yaml 這個檔案
 
-```=
+```bash=
 $ cat /var/lib/kubelet/config.yaml 
 apiVersion: kubelet.config.k8s.io/v1beta1
 authentication:
@@ -108,20 +110,20 @@ staticPodPath: /etc/kubernetes/manifests
 
 舉個例子，現在我們要刪除static-greenbox-node01這個pod
 
-```=
+```bash=
 master $ kubectl get po
 NAME                     READY   STATUS    RESTARTS   AGE
 static-greenbox-node01   1/1     Running   0          104s
 ```
 我們到 **/etc/kubernetes/manifests** 目錄下找這個file
-```=
+```bash=
 master $ pwd
 /etc/kubernetes/manifests
 master $ ls
 etcd.yaml  kube-apiserver.yaml  kube-controller-manager.yaml  kube-scheduler.yaml
 ```
 發現找不到這個file，那這個static pod是如何創建的呢? 我們 **get pod -o wide** 看看
-```=
+```bash=
 master $ kubectl get po -o wide
 NAME                     READY   STATUS    RESTARTS   AGE     IP          NODE     NOMINATED NODE   READINESS GATES
 static-greenbox-node01   1/1     Running   0          6m50s   10.44.0.1   node01   <none>           <none>
@@ -130,7 +132,7 @@ static-greenbox-node01   1/1     Running   0          6m50s   10.44.0.1   node01
 進來後一樣使用 **ps -aux | grep kubelet** 查找，然後查看 **/var/lib/kubelet/config.yaml** 檔案
 
 
-```=
+```bash=
 node01 $ cat /var/lib/kubelet/config.yaml
 address: 0.0.0.0
 apiVersion: kubelet.config.k8s.io/v1beta1
@@ -209,7 +211,7 @@ volumeStatsAggPeriod: 1m0s
 ```
 
 赫然發現 static pod的創見目錄變更了 位於 **staticPodPath: /etc/just-to-mess-with-you** ，索性進入該目錄
-```=
+```bash=
 node01 $ pwd
 /etc/just-to-mess-with-you
 node01 $ ls
@@ -222,7 +224,7 @@ greenbox.yaml
 ## 創建 static pod
 
 在knode上創建static pod，先找到創建的特定目錄，在該目錄下創建static-pod.yaml，使用最簡單的nginx image做範例，內容如下：
-```=
+```yaml=
 apiVersion: v1
 kind: Pod
 metadata:
@@ -241,15 +243,15 @@ spec:
 但是，若直接將此 static pod 創建起來，會一直進入CrashBackOff狀態，需要重新config你的kubelet才可以。
 輸入 **KUBELET_ARGS="--cluster-dns=10.254.0.10 --cluster-domain=kube.local --pod-manifest-path=\<static-pod-dic\>"**
 
-```=
+```bash=
 KUBELET_ARGS="--cluster-dns=10.254.0.10 --cluster-domain=kube.local --pod-manifest-path=/etc/kubernetes/manifest"
 ```
 接著重啟kubelet
-```=
+```bash=
 systemctl restart kubelet
 ```
 到Master查看，就發現 Pod 處於 Running status囉～
-```=
+```bash=
 $ kubectl get po
 NAME               READY   STATUS    RESTARTS   AGE
 static-web-knode   1/1     Running   0          3h31m
@@ -257,7 +259,7 @@ static-web-knode   1/1     Running   0          3h31m
 ---
 ## 如何看Pod網域
 當查看Pod時，可以看到它們的IP addr
-```=
+```bash=
 root@gmaster:/home/gmaster/k8s_demo/1-basicObject# kubectl get no -o wide
 NAME      STATUS   ROLES    AGE   VERSION   INTERNAL-IP    EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION      CONTAINER-RUNTIME
 gmaster   Ready    master   9d    v1.17.4   10.10.14.124   <none>        Ubuntu 18.04 LTS     4.15.0-20-generic   docker://19.3.6
@@ -266,7 +268,7 @@ gnode02   Ready    <none>   9d    v1.17.4   10.10.19.6     <none>        Ubuntu 
 ```
 可以發現它們的IP都是10.10.X.X，為甚麼他們的IP都有相同的的mask呢?又要如何確定它們的mask是多少?
 首先，先觀察它們是用哪張interface。可以用```arp```來查看
-```=
+```bash=
 oot@gmaster:/home/gmaster/k8s_demo/1-basicObject# arp
 Address                  HWtype  HWaddress           Flags Mask            Iface
 gnode01                  ether   00:50:56:b5:58:1d   C                     ens160
@@ -282,7 +284,7 @@ dns.h                    ether   00:11:32:2c:a6:03   C                     ens16
 10.10.10.9               ether   c8:d9:d2:cb:f2:3a   C                     ens160
 ```
 可以發現gmaster是使用**ens160**這張interface，再用```ip addr```指令，並觀察**ens160**這張interface的資訊
-```=
+```bash=
 root@gmaster:/home/gmaster/k8s_demo/1-basicObject# ip addr
 1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
     link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
@@ -358,8 +360,8 @@ root@gmaster:/home/gmaster/k8s_demo/1-basicObject# ip addr
 
 ## Pod 操作
 創建Pod
-```=
-kubectl run <pod-name> --image=<image> --generator=run-pod/v1 --restart=Never --dry-run -o yaml > pod-def.yaml
+```bash=
+kubectl run <pod-name> --image=<image> --generator=run-pod/v1 --restart=Never --dry-run=client -o yaml > pod-def.yaml
 ```
 :::success
 ```--generator=```其實也可以用來創建其他object，但是[官方文獻](https://kubernetes.io/docs/reference/kubectl/conventions/)不推薦用來創建Pod以外的物件；
